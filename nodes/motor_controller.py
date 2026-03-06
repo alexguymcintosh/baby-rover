@@ -86,6 +86,7 @@ class MotorController(Node):
             self.cmd_vel_callback,
             10
         )
+        
 
         self.get_logger().info('Motor controller ready.')
 
@@ -105,11 +106,14 @@ class MotorController(Node):
         self.angular = 0.0
         self.debug_counter = 0
 
+        self.active = False
+
     def cmd_vel_callback(self, msg):
         self.get_logger().info(f'cmd_vel: linear={msg.linear.x:.2f} angular={msg.angular.z:.2f}')
         self.get_logger().info(f'enc_a={self.enc_a_count} enc_b={self.enc_b_count}')
         self.linear = msg.linear.x
         self.angular = msg.angular.z
+        self.active = True
 
     def drive_motor_a(self, speed):
         duty = min(abs(speed) * MAX_SPEED, MAX_SPEED)
@@ -156,7 +160,7 @@ class MotorController(Node):
 
     def publish_odom(self):
         PULSES_PER_REV = 1050
-        WHEEL_CIRCUMFERENCE = 0.1382  # metres
+        WHEEL_CIRCUMFERENCE = 0.1382
 
         delta_a = self.enc_a_count - self.last_enc_a
         delta_b = self.enc_b_count - self.last_enc_b
@@ -166,27 +170,27 @@ class MotorController(Node):
         dist_a = (delta_a / PULSES_PER_REV) * WHEEL_CIRCUMFERENCE
         dist_b = (delta_b / PULSES_PER_REV) * WHEEL_CIRCUMFERENCE
 
-        #PID controller
         error = delta_a - delta_b
         self.pid_integral += error * 0.02
-        self.pid_integral = max(-windup_limit,min (windup_limit,self.pid_integral)) #windup limit (tunable parameter)
+        self.pid_integral = max(-windup_limit, min(windup_limit, self.pid_integral))
         derivative = (error - self.pid_prev_error) / 0.02
         self.correction = pid_kp * error + pid_ki * self.pid_integral + pid_kd * derivative
         self.debug_counter += 1
-        if self.debug_counter % 25 == 0:  # print once per 0.5 seconds
+        if self.debug_counter % 25 == 0:
             self.get_logger().info(f'correction={self.correction:.4f} integral={self.pid_integral:.4f} error={error}')
         self.pid_prev_error = error
 
-        correction_normalised = self.correction
-        right = self.linear - (self.angular * WHEEL_BASE / 2.0) - correction_normalised
-        left  = self.linear + (self.angular * WHEEL_BASE / 2.0) + correction_normalised
-        self.drive_motor_a(right)
-        self.drive_motor_b(left)
-        
+        right = self.linear - (self.angular * WHEEL_BASE / 2.0) - self.correction
+        left = self.linear + (self.angular * WHEEL_BASE / 2.0) + self.correction
+
+        if self.active and self.linear != 0.0:
+            self.drive_motor_a(right)
+            self.drive_motor_b(left)
+        else:
+            self.stop_motors()
 
         dist = (dist_a + dist_b) / 2.0
         dtheta = (dist_a - dist_b) / WHEEL_BASE
-
         self.x += dist * math.cos(self.theta)
         self.y += dist * math.sin(self.theta)
         self.theta += dtheta
@@ -199,7 +203,6 @@ class MotorController(Node):
         msg.pose.pose.position.y = self.y
         msg.twist.twist.linear.x = dist / 0.02
         msg.twist.twist.angular.z = dtheta / 0.02
-
         self.odom_pub.publish(msg)
     
     def _watch_enc_a(self):

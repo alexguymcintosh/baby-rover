@@ -149,3 +149,24 @@
 - implented added PID
 - open loop 5% variance 
 - closed loop -> P = 0.01 | I = 0.005 | Variance = 0.5% after 10 seconds - (linear x = 0.3)
+
+## 2026-03-06-20-20 Alex
+
+### Problem
+Stalling noise when linear x = 0.0 on node startup.
+
+### Explanation
+`publish_odom` runs at 50Hz from the moment the node starts. Before any `cmd_vel` arrives `self.linear = 0.0` so it commands zero speed 50 times per second. The TB6612 in active brake mode holds both direction pins LOW with PWM at 0%, shorting the motor terminals together through the driver. The 1000Hz PWM carrier is still running at 0% duty cycle — motor coils are energised and de-energised at 1000Hz with zero net torque. That's the stalling noise.
+
+### Solution
+- Added `self.active = False` to `__init__`
+- Added `self.active = True` to `cmd_vel_callback`
+- Wrapped motor drive calls in `publish_odom` with:
+```python
+  if self.active and self.linear != 0.0:
+      self.drive_motor_a(right)
+      self.drive_motor_b(left)
+  else:
+      self.stop_motors()
+```
+Motors are now silent until the first `cmd_vel` arrives.
