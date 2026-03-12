@@ -125,6 +125,11 @@ private:
         lgGpioWrite(chip_, AIN2, speed > 0 ? 0 : 1);
         if (speed == 0.0) { lgGpioWrite(chip_, AIN1, 0); lgGpioWrite(chip_, AIN2, 0); }
         lgTxPwm(chip_, PWMA, 1000, duty, 0, 0);
+        
+        if (++debug_counter_ % 25 == 0)
+            RCLCPP_INFO(get_logger(), "AIN1=%d AIN2=%d duty=%.1f", 
+                lgGpioRead(chip_, AIN1), lgGpioRead(chip_, AIN2), duty);
+        
     }
 
     void driveMotorB(double speed)
@@ -215,7 +220,6 @@ private:
     {
         int current_a = enc_a_count_.load();
         int current_b = enc_b_count_.load();
-
         int delta_a = current_a - last_enc_a_;
         int delta_b = current_b - last_enc_b_;
         last_enc_a_ = current_a;
@@ -227,9 +231,6 @@ private:
         double error      = static_cast<double>(delta_a - delta_b);
         double correction = computePID(error, pid_state_);
         // ─────────────────────────────────────────────────────────────────────
-
-        if (++debug_counter_ % 25 == 0)
-            RCLCPP_INFO(get_logger(), "enc_a=%d", enc_a_count_.load());
 
         // ── MOTOR MIXING ──────────────────────────────────────────────────────
         // correction nudges motors to keep them matched.

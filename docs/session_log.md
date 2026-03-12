@@ -404,3 +404,53 @@ analysis/data/
 ### Dependencies:
 - pip3 install pandas --break-system-packages
 - sudo apt install python3-pip
+
+## 2026-03-12-23-00     Alex - Encoder Hardware/Software Interface Ground Truth 
+
+### Refer:
+- hardware_software_interface/encoder.md
+
+### Description
+Mapping the encoder signal chain from physical pulse to software variable using 
+three validation layers: PulseView (hardware ground truth), VSCode debugger 
+(software state inspection), and printf (live runtime behaviour).
+Goal: establish ground truth of what the software sees at each layer before 
+writing any control logic on top of it.
+
+
+### Test 1: watchEncoder — Thread Independence
+**Goal:** Confirm each encoder runs on an independent kernel thread and cannot
+be triggered by the other motor.
+
+### Test 2: Cumulative Count — Both Motors, Velocity Estimation
+**Goal:** Confirm both enc_a and enc_b accumulate correctly and extract 
+first real velocity data for each motor independently.
+
+### Test 3: Delta Per Tick — Control Loop Resolution
+**Goal:** See exactly what the PID receives every 20ms — pulses per tick
+for each motor independently at constant speed.
+
+### Test 4: PWM Duty Cycle
+**Goal:** Confirm the duty cycle value sent to hardware matches the 
+expected scaling from cmd_vel.
+
+## Test 5: Direction Pins — TB6612 Truth Table
+**Goal:** Confirm AIN1/AIN2 logic matches TB6612 forward/backward truth table.
+
+### What I learnt
+
+#### Encoder Software — Hardware Interface
+- Each encoder runs on independent kernel thread blocking on its own GPIO file descriptor
+- Thread wakes only when kernel delivers interrupt on its specific pin — zero CPU when idle
+- `enc_a_count_` is atomic — CPU-level instruction guarantees no corrupt reads between threads
+- `delta_a` = pulses in last 20ms tick = what the PID sees every cycle
+- At linear=0.3: delta_a=13-14 per tick → ~0.088 m/s per motor
+- Motor B runs 2.9% faster than motor A open loop — confirmed systematic bias, not noise
+
+#### PWM and Direction — Hardware Interface  
+- PWM frequency fixed at 1000Hz. Duty cycle = % of time signal is ON
+- linear=0.3 → duty=30% → motor feels 30% of supply voltage
+- Formula: duty = speed × MAX_SPEED (100)
+- lgTxPwm() programs Pi hardware PWM peripheral — runs in silicon independently of code
+- AIN1=1, AIN2=0 → forward. AIN1=0, AIN2=1 → backward — confirmed against TB6612 truth table
+- Direction and speed are independent: AIN pins set direction, PWM pin sets magnitude
