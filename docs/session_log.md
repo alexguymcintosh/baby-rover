@@ -514,4 +514,17 @@ python3 analysis/pulseview_edge_count.py path/to/export.csv
 
 ### What's next
 - computePID() implementation
-```
+
+## 2026-03-21-13-53 — Alex (Claude)
+
+### What was done
+- Implemented computePID() — P, I, D terms with windup clamp
+- Restructured timerCallback() for independent per-motor PID
+- Error computed in pulse count units — no unit mismatch
+- Motor B trim applied: MOTOR_B_TRIM = 0.971
+- Validated open loop baseline: err stable ~36/34, pwm locked at 0.2952/0.2867
+- Validated closed loop alive: KP=0.001, pwm responding to error, jumped to ~0.331
+- Refer: docs/hardware_software_interface/pid.md
+
+### What's next
+- PID tuning

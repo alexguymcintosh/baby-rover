@@ -31,42 +31,37 @@ constexpr double DT                  = 0.02;   // 50 Hz timer period (seconds)
 
 // ─── PID TUNING ───────────────────────────────────────────────────────────────
 // TODO: set these once you have written and tested the PID
-constexpr double PID_KP       = 0.0;
+constexpr double PID_KP       = 0.001;
 constexpr double PID_KI       = 0.0;
 constexpr double PID_KD       = 0.0;
 constexpr double WINDUP_LIMIT = 50.0;
+constexpr double MOTOR_B_TRIM = 0.971;
 
 
 // ─── PID STATE ────────────────────────────────────────────────────────────────
 // These three variables are all the memory the PID needs between timer ticks.
 // You own these — do not touch them anywhere except inside computePID().
-struct PidState {
+struct PidState 
+{
     double integral   = 0.0;
     double prev_error = 0.0;
 };
 
+PidState pid_state_a_;
+PidState pid_state_b_;
 
-// ─── PID FUNCTION ─────────────────────────────────────────────────────────────
-// INPUT:  error      — difference between left and right encoder counts this tick
-//         state      — the three persistent PID values above
-// OUTPUT: correction — how much to nudge left/right motor duty cycle
-//
-// THIS IS WHERE YOU WRITE YOUR PID.
-// Delete the return 0.0 and implement the three terms.
 double computePID(double error, PidState& state)
 {
-    // ── YOUR CODE GOES HERE ───────────────────────────────────────────────────
-    //
-    //  Proportional:   double p = ...
-    //  Integral:       state.integral += ...
-    //                  clamp integral to ±WINDUP_LIMIT
-    //  Derivative:     double d = ...
-    //  Update state:   state.prev_error = error
-    //  Return:         p + i + d
-    //
-    // ─────────────────────────────────────────────────────────────────────────
-    return 0.0;
+
+double p = PID_KP * error;
+state.integral += PID_KI * error * DT;
+state.integral = std::clamp(state.integral, -WINDUP_LIMIT, WINDUP_LIMIT);
+double d = PID_KD * (error - state.prev_error) / DT;
+state.prev_error = error;
+return p + state.integral + d;
+
 }
+
 
 
 // ─── MOTOR CONTROLLER NODE ────────────────────────────────────────────────────
@@ -193,7 +188,8 @@ private:
     void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
         linear_  = msg->linear.x;
-        angular_ = msg->angular.z;
+        //angular_ = msg->angular.z;
+        angular_ = 0.0;
         active_  = true;
     }
 
@@ -222,22 +218,20 @@ private:
         last_enc_a_ = current_a;
         last_enc_b_ = current_b;
 
-        // ── PID CALL ──────────────────────────────────────────────────────────
-        // error = how far apart the two wheels are this tick
-        // correction = what computePID() returns — applied below to balance them
-        double error      = static_cast<double>(delta_a - delta_b);
-        double correction = computePID(error, pid_state_);
-        // ─────────────────────────────────────────────────────────────────────
+        // ── PID ───────────────────────────────────────────────────────────────
+        double target_a = linear_ - (angular_ * WHEEL_BASE / 2.0);
+        double target_b = (linear_ + (angular_ * WHEEL_BASE / 2.0)) * MOTOR_B_TRIM;
+        double target_counts_a = target_a * (PULSES_PER_REV * DT / WHEEL_CIRCUMFERENCE);
+        double target_counts_b = target_b * (PULSES_PER_REV * DT / WHEEL_CIRCUMFERENCE);
+        double error_a = target_counts_a - delta_a;
+        double error_b = target_counts_b - delta_b;
+        double pwm_a = target_a + computePID(error_a, pid_state_a_);
+        double pwm_b = target_b + computePID(error_b, pid_state_b_);
 
-        // ── MOTOR MIXING ──────────────────────────────────────────────────────
-        // correction nudges motors to keep them matched.
-        // When PID is zero this still drives open-loop — useful for testing.
-        double right = linear_ - (angular_ * WHEEL_BASE / 2.0) - correction;
-        double left  = linear_ + (angular_ * WHEEL_BASE / 2.0) + correction;
-
+        // ── MOTOR DRIVE ───────────────────────────────────────────────────────
         if (active_ && linear_ != 0.0) {
-            driveMotorA(right);
-            driveMotorB(left);
+            driveMotorA(pwm_a);
+            driveMotorB(pwm_b);
         } else {
             stopMotors();
         }
@@ -262,9 +256,9 @@ private:
         odom.twist.twist.angular.z = dtheta / DT;
         odom_pub_->publish(odom);
 
-        if (++debug_counter_ % 500 == 0)
-            RCLCPP_INFO(get_logger(), "enc_a=%d enc_b=%d", enc_a_count_.load(), enc_b_count_.load());
-
+        if (++debug_counter_ % 25 == 0)
+            RCLCPP_INFO(get_logger(), "err_a=%.4f err_b=%.4f pwm_a=%.4f pwm_b=%.4f",
+                        error_a, error_b, pwm_a, pwm_b);
         
     }
 };

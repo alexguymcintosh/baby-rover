@@ -275,74 +275,102 @@ Compare to delta_a from printf.
 
 **Status: PENDING**
 
-## Single Motor PID — Implementation Steps
+# Independent Per-Motor PID — Implementation
 
-### Step 1: Write computePID()
-- Open rover_control/src/motor_controller.cpp
-- Find computePID() stub
-- Implement three terms by hand:
-  - P: double p = PID_KP * error
-  - I: state.integral += PID_KI * error * DT
-  - I: clamp state.integral to ±WINDUP_LIMIT
-  - D: double d = PID_KD * (error - state.prev_error) / DT
-  - Update: state.prev_error = error
-  - Return: p + state.integral + d
-- Gains start at 0.0 — do not set gains yet
+## Description
+Replaced single shared PID with independent PID instances for motor A and B.
+Error computed in pulse count units. Motor B trim applied before PID.
+Validated closed loop is alive with P gain only.
 
-### Step 2: Restructure timerCallback() for per-motor PID
-- Calculate target velocity per wheel from cmd_vel:
-  - target_a = linear_ - (angular_ * WHEEL_BASE / 2.0)
-  - target_b = linear_ + (angular_ * WHEEL_BASE / 2.0)
-- Calculate actual velocity per wheel from delta:
-  - vel_a = (delta_a / PULSES_PER_REV) * WHEEL_CIRCUMFERENCE / DT
-  - vel_b = (delta_b / PULSES_PER_REV) * WHEEL_CIRCUMFERENCE / DT
-- Calculate error per wheel:
-  - error_a = target_a - vel_a
-  - error_b = target_b - vel_b
-- Add second PidState instance for motor B:
-  - PidState pid_state_a_
-  - PidState pid_state_b_
-- Call computePID() independently for each motor:
-  - pwm_a = computePID(error_a, pid_state_a_)
-  - pwm_b = computePID(error_b, pid_state_b_)
-- Drive motors with PID output:
-  - driveMotorA(pwm_a)
-  - driveMotorB(pwm_b)
+---
 
-### Step 3: Open loop test — confirm structure works
-- Keep all gains at 0.0
-- Run at linear=0.3
-- Confirm motors still spin — structure is correct
-- Confirm printf shows error_a and error_b printing nonzero values
+## Implementation
 
-### Step 4: Set P gain only
-- Set PID_KP = 0.01, Ki = 0.0, Kd = 0.0
-- Run at linear=0.3
-- Record delta_a, delta_b, error_a, error_b, pwm_a, pwm_b with printf
-- Observe: does correction respond to error?
-- Capture PulseView trace simultaneously
+**computePID():**
+```cpp
+double p = PID_KP * error;
+state.integral += PID_KI * error * DT;
+state.integral = std::clamp(state.integral, -WINDUP_LIMIT, WINDUP_LIMIT);
+double d = PID_KD * (error - state.prev_error) / DT;
+state.prev_error = error;
+return p + state.integral + d;
+```
 
-### Step 5: Add I gain
-- Set PID_KI = 0.005
-- Run at linear=0.3
-- Watch integral accumulate in printf output
-- Confirm motors converge to matched speed
-- Record settling time — how many seconds to stable ratio
+**Error calculation — pulse count units:**
+```cpp
+double target_counts_a = target_a * (PULSES_PER_REV * DT / WHEEL_CIRCUMFERENCE);
+double target_counts_b = target_b * (PULSES_PER_REV * DT / WHEEL_CIRCUMFERENCE);
+double error_a = target_counts_a - delta_a;
+double error_b = target_counts_b - delta_b;
+double pwm_a = target_a + computePID(error_a, pid_state_a_);
+double pwm_b = target_b + computePID(error_b, pid_state_b_);
+```
 
-### Step 6: Validate against Simulink
-- Record step response data via ROS bag:
-  - ros2 bag record /odom /cmd_vel
-- Load bag in Python analysis script
-- Plot velocity_a and velocity_b over time
-- Overlay on Simulink step response
-- Measure: rise time, overshoot, settling time, steady state error
-- Tune gains until hardware response matches Simulink target
+**Motor B trim:**
+```cpp
+constexpr double MOTOR_B_TRIM = 0.971;
+target_b = (linear_ + (angular_ * WHEEL_BASE / 2.0)) * MOTOR_B_TRIM;
+```
 
-### Step 7: Repeat for motor B independently
-- Disconnect motor A
-- Run motor B alone with its own PID
-- Tune pid_state_b_ gains independently
-- Confirm motor B matches motor A response profile
+---
+
+## Test: Open Loop Baseline
+**Conditions:** Floor, linear=0.3, KP=KI=KD=0.0, 1 metre run
+
+| Sample | err_a  | err_b  | pwm_a  | pwm_b  |
+|--------|--------|--------|--------|--------|
+| 1      | 41.864 | 40.563 | 0.2952 | 0.2867 |
+| 2      | 36.864 | 35.563 | 0.2952 | 0.2867 |
+| 3      | 37.864 | 35.563 | 0.2952 | 0.2867 |
+| 4      | 35.864 | 34.563 | 0.2952 | 0.2867 |
+| 5      | 35.864 | 34.563 | 0.2952 | 0.2867 |
+| 6      | 35.864 | 33.563 | 0.2952 | 0.2867 |
+| 7      | 36.864 | 35.563 | 0.2952 | 0.2867 |
+| 8      | 35.864 | 34.563 | 0.2952 | 0.2867 |
+| 9      | 36.864 | 35.563 | 0.2952 | 0.2867 |
+| 10     | 36.864 | 34.563 | 0.2952 | 0.2867 |
+| 11     | 36.864 | 34.563 | 0.2952 | 0.2867 |
+| 12     | 36.864 | 33.563 | 0.2952 | 0.2867 |
+| 13     | 36.864 | 33.563 | 0.2952 | 0.2867 |
+| 14     | 35.864 | 34.563 | 0.2952 | 0.2867 |
+| 15     | 36.864 | 34.563 | 0.2952 | 0.2867 |
+| 16     | 36.864 | 35.563 | 0.2952 | 0.2867 |
+| 17     | 35.864 | 34.563 | 0.2952 | 0.2867 |
+| 18     | 35.864 | 34.563 | 0.2952 | 0.2867 |
+| 19     | 36.864 | 34.563 | 0.2952 | 0.2867 |
+| 20     | 36.864 | 35.563 | 0.2952 | 0.2867 |
+
+**Key finding:** err_a ~36, err_b ~34 stable. pwm locked — no correction. Trim working: pwm_b = pwm_a × 0.971.
+
+---
+
+## Test: P Gain Only — Closed Loop Validation
+**Conditions:** Floor, linear=0.3, KP=0.001, KI=KD=0.0, 1 metre run
+
+| Sample | err_a  | err_b  | pwm_a  | pwm_b  |
+|--------|--------|--------|--------|--------|
+| 1      | 37.864 | 35.563 | 0.3331 | 0.3222 |
+| 2      | 35.864 | 34.563 | 0.3311 | 0.3212 |
+| 3      | 34.864 | 33.563 | 0.3301 | 0.3202 |
+| 4      | 36.864 | 34.563 | 0.3321 | 0.3212 |
+| 5      | 35.864 | 34.563 | 0.3311 | 0.3212 |
+| 6      | 34.864 | 33.563 | 0.3301 | 0.3202 |
+| 7      | 34.864 | 33.563 | 0.3301 | 0.3202 |
+| 8      | 34.864 | 34.563 | 0.3301 | 0.3212 |
+| 9      | 33.864 | 31.563 | 0.3291 | 0.3182 |
+| 10     | 34.864 | 33.563 | 0.3301 | 0.3202 |
+| 11     | 34.864 | 34.563 | 0.3301 | 0.3212 |
+| 12     | 35.864 | 33.563 | 0.3311 | 0.3202 |
+| 13     | 34.864 | 33.563 | 0.3301 | 0.3202 |
+| 14     | 35.864 | 33.563 | 0.3311 | 0.3202 |
+| 15     | 35.864 | 34.563 | 0.3311 | 0.3212 |
+| 16     | 35.864 | 34.563 | 0.3311 | 0.3212 |
+| 17     | 35.864 | 34.563 | 0.3311 | 0.3212 |
+| 18     | 34.864 | 33.563 | 0.3301 | 0.3202 |
+| 19     | 33.864 | 33.563 | 0.3291 | 0.3202 |
+| 20     | 35.864 | 34.563 | 0.3311 | 0.3212 |
+
+**Key finding:** pwm jumped from 0.2952 → 0.330 — P term adding ~0.035 correction. Error not closing — expected, P alone cannot eliminate steady state error. Both motors responding independently. Closed loop confirmed alive.
 
 ## Motor A Plant Identification — Simulink
 
