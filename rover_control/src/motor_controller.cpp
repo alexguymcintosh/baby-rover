@@ -32,7 +32,7 @@ constexpr double DT                  = 0.02;   // 50 Hz timer period (seconds)
 // ─── PID TUNING ───────────────────────────────────────────────────────────────
 // TODO: set these once you have written and tested the PID
 constexpr double PID_KP       = 0.001;
-constexpr double PID_KI       = 0.0;
+constexpr double PID_KI       = 0.0005;
 constexpr double PID_KD       = 0.0;
 constexpr double WINDUP_LIMIT = 50.0;
 constexpr double MOTOR_B_TRIM = 0.971;
@@ -188,9 +188,13 @@ private:
     void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
         linear_  = msg->linear.x;
-        //angular_ = msg->angular.z;
         angular_ = 0.0;
-        active_  = true;
+        if (!active_) {
+            last_enc_a_ = enc_a_count_.load();
+            last_enc_b_ = enc_b_count_.load();
+        }
+        
+        active_ = true;
     }
 
     // ── ODOMETRY ──────────────────────────────────────────────────────────────

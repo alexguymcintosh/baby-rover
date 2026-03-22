@@ -541,3 +541,21 @@ python3 analysis/pulseview_edge_count.py path/to/export.csv
 
 ### What's next
 - simulation plant
+
+## 2026-03-23-10-54 — Alex (Claude)
+
+### What was done
+- Built analysis/plot_pid_response.py — ROS bag loader, plots motor A and B
+  velocity vs cmd_vel, error subplot. Fixed unit mismatch, added individual
+  motor extraction from odom using wheel base geometry
+- Built analysis/identify_plant.py — scipy curve fit for first order transfer
+  function. Abandoned — motor too fast for 50Hz odom to capture transient
+- Fixed odom drift at startup — last_enc reset on first cmd_vel in cmdVelCallback
+- Tuned PID to KP=0.001, KI=0.0005, KD=0.0
+- Validated: steady state error ±0.010 m/s, no bias, motors matched
+- Refer: docs/hardware_software_interface/pid_velocity_response.md
+
+### Decisions
+- MATLAB abandoned for Linux — use Python scipy only
+- Plant ID abandoned — empirical tuning faster and sufficient for this system
+- PID declared done — good enough for rover platform, move to drone

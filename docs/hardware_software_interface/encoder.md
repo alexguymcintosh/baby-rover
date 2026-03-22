@@ -397,78 +397,47 @@ All runs: floor, linear=0.3, 1 metre+, rover free-running.
 **Key finding:** P term confirmed working. Steady state error of -0.008 m/s 
 persists — requires I term to eliminate.
 
+# PID Velocity Response — Tuning Results
 
-## Motor A Plant Identification — Simulink
+## Description
+Step response captured via ROS bag, plotted using analysis/plot_pid_response.py
+and analysis/identify_plant.py. Validates closed loop behaviour at each gain setting.
+All runs: floor, linear=0.5, 2 metres.
 
-### Step 1: Capture step response data
-- Disconnect motor B
-- Command step input: linear=0.0 → linear=0.3 at t=0
-- Record with ROS bag:
-  - ros2 bag record /odom /cmd_vel
-- Simultaneously capture encoder A in PulseView at 100kHz
-- Run for 10 seconds minimum
-- Repeat 3 times — average removes noise
+---
 
-### Step 2: Extract velocity over time in Python
-- Load ROS bag
-- Extract delta_a per tick from odom topic
-- Convert to velocity: vel_a = (delta_a / 1050) * 0.1382 / 0.02
-- Plot velocity vs time — this is your step response curve
+## Run 2603221030 — KP=0.001, KI=0.0, KD=0.0
+**Plot:** `analysis/plots/2603221030.png`
 
-### Step 3: Identify transfer function
-- Feed velocity curve into MATLAB System Identification Toolbox
-- Fit second order transfer function to data
-- Record: numerator, denominator, time constant, DC gain
-- Compare to Simulink placeholder [1] / [0.01 0.1 1]
-- Replace placeholder with real values
+- Both motors reach ~0.095 m/s, cmd_vel target 0.088 m/s
+- Motors A and B nearly identical — trim working
+- Steady state error: -0.008 m/s persistent — expected, P alone cannot eliminate
+- Clean step response, rise time ~1 second
 
-### Step 4: Validate plant model in Simulink
-- Update Transfer Function block with real coefficients
-- Apply same step input as hardware test
-- Overlay Simulink response vs Python extracted response
-- Pass: curves match within acceptable tolerance
-- Fail: re-run system ID with more data
+**Key finding:** P term confirmed working. Steady state error persists — requires I term.
 
-### Step 5: Run pidtune() on real plant
+---
 
-- s = tf('s')
-- plant = real transfer function from Step 3
-- pidtune(plant, 'PID')
-- Record new Kp, Ki, Kd
-- Compare to placeholder gains from earlier simulation
-- These are your target hardware gains
+## Run 2603231047 — KP=0.001, KI=0.0005, KD=0.0
+**Plot:** `analysis/plots/2603231047.png`
 
-## Python Analysis Tool — PID Final Tune
+- Both motors hit 0.147 m/s target immediately — fast clean step
+- Motors A and B well matched — trim working
+- Error settles within ±0.010 m/s of zero — no steady state bias
+- I term eliminating steady state error, crossing zero and holding
 
-### Step 1: Load ROS bag data
-- Extract /odom topic — velocity over time
-- Extract /cmd_vel topic — command over time
-- Plot both on same time axis
+**Key finding:** PID tuned and validated. Steady state error eliminated.
+Final gains: KP=0.001, KI=0.0005, KD=0.0
 
-### Step 2: Load PulseView CSV
-- Import encoder trace
-- Reconstruct velocity from rising edge timestamps
-- Plot on same axis as ROS bag velocity
+**Status: DONE**
 
-### Step 3: Validate both sources agree
-- Overlay ROS bag velocity vs PulseView velocity
-- Pass: curves match
-- Fail: investigate missed pulses or timing offset
+---
 
-### Step 4: Extract step response metrics
-- Rise time: time from 10% to 90% of final velocity
-- Overshoot: peak velocity above setpoint
-- Settling time: time to stay within 5% of setpoint
-- Steady state error: final velocity vs commanded velocity
-
-### Step 5: Overlay hardware vs Simulink
-- Load Simulink export CSV
-- Plot on same axis as hardware response
-- Measure delta between curves
-
-### Step 6: Tune gains from data
-- If steady state error exists → increase Ki
-- If overshoot exists → decrease Kp or increase Kd
-- If response too slow → increase Kp
-- Update gains in cpp, rebuild, rerun, replot
-- Repeat until hardware matches Simulink target
+## Notes
+- Plant identification attempted via scipy curve_fit — motor rise time too fast
+  (~0.1s) for 50Hz odom to capture enough transient samples. Abandoned.
+- MATLAB System Identification Toolbox install failed on Linux — use Python scipy
+  for all future analysis.
+- cmd_vel hardcoded in plot script as motors start before teleop cmd arrives —
+  add automatic start detection flag to fix properly later.
+- All plots saved to analysis/plots/ with datetime filename.

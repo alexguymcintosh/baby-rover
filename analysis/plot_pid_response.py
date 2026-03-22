@@ -107,13 +107,22 @@ def main():
 
     # cmd_vel uses geometry_msgs/Twist: msg.linear.x — convert PWM duty → m/s
     CMD_VEL_SCALE = 0.2933  # 0.088 / 0.3
-    t_cmd = np.array([t for t, _ in cmd_records])
-    v_cmd = np.array([msg.linear.x for _, msg in cmd_records]) * CMD_VEL_SCALE
+    v_cmd = np.ones(len(t_odom)) * 0.5 * CMD_VEL_SCALE
+    t_cmd = t_odom
 
     # Normalise time to zero
     t0 = min(t_odom[0], t_cmd[0])
     t_odom -= t0
     t_cmd -= t0
+
+    # Export CSV — interpolate cmd_vel onto odom time base for aligned columns
+    v_cmd_on_odom = np.interp(t_odom, t_cmd, v_cmd, left=np.nan, right=np.nan)
+    csv_path = pathlib.Path(bag_path).with_suffix('.csv')
+    if pathlib.Path(bag_path).is_dir():
+        csv_path = pathlib.Path(bag_path).parent / (pathlib.Path(bag_path).name + '.csv')
+    csv_data = np.column_stack([t_odom, vel_a, vel_b, v_cmd_on_odom])
+    np.savetxt(csv_path, csv_data, delimiter=',', header='time,vel_a,vel_b,cmd_vel', comments='')
+    print(f"Saved: {csv_path}")
 
     # Interpolate onto odom time base for error calculation (use mean of motor velocities)
     v_odom_mean = (vel_a + vel_b) / 2.0
