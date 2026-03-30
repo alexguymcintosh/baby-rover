@@ -559,3 +559,16 @@ python3 analysis/pulseview_edge_count.py path/to/export.csv
 - MATLAB abandoned for Linux — use Python scipy only
 - Plant ID abandoned — empirical tuning faster and sufficient for this system
 - PID declared done — good enough for rover platform, move to drone
+
+## 2026-03-31-10-33 — Alex (Claude)
+
+### What was done
+- Fixed teleop turning — angular_ was hardcoded to 0.0, changed to msg->angular.z
+- Fixed differential turn on spot — motor gate was blocking angular-only commands,
+  changed condition to (linear_ != 0.0 || angular_ != 0.0)
+- Built scripts/depth_colormap.py — subscribes to raw depth topic, applies COLORMAP_JET,
+  publishes /camera/depth/colormap for heatmap display in rqt_image_view
+- Fixed topic mismatch — depth_colormap.py now subscribes to correct topic
+  /camera/camera/depth/image_rect_raw
+- RealSense D415 confirmed publishing depth and colour at 480x270x15 over WiFi
+- Demo ready: teleop driving + RGB feed + depth heatmap on ThinkPad via RViz2

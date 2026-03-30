@@ -188,7 +188,7 @@ private:
     void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
         linear_  = msg->linear.x;
-        angular_ = 0.0;
+        angular_ = msg->angular.z;
         if (!active_) {
             last_enc_a_ = enc_a_count_.load();
             last_enc_b_ = enc_b_count_.load();
@@ -233,7 +233,7 @@ private:
         double pwm_b = target_b + computePID(error_b, pid_state_b_);
 
         // ── MOTOR DRIVE ───────────────────────────────────────────────────────
-        if (active_ && linear_ != 0.0) {
+        if (active_ && (linear_ != 0.0 || angular_ != 0.0)){
             driveMotorA(pwm_a);
             driveMotorB(pwm_b);
         } else {
